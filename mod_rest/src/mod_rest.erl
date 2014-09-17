@@ -145,10 +145,17 @@ binary_to_ip_tuple(IpAddress) when is_binary(IpAddress) ->
     IpTuple.
 
 post_request(Stanza, From, To) ->
-    case ejabberd_router:route(From, To, Stanza) of
-	ok -> {200, [], <<"Ok">>};
-        _ -> {500, [], <<"Error">>}
-    end.
+  case strip_addresses_element(Stanza) of 
+    {ok, Packet_stripped, AAttrs, Addresses} ->
+      Jids=strip_addresses_jid(Addresses),
+      [ multicast_message(From,Jid,Packet_stripped) || Jid <- Jids],
+      {200, [], <<"Ok">>};
+    _ ->
+      case ejabberd_router:route(From, To, Stanza) of
+         ok -> {200, [], <<"Ok">>};
+         _ -> {500, [], <<"Error">>}
+      end
+  end.
 
 %% Split a line into args. Args are splitted by blankspaces. Args can be enclosed in "".
 %%
@@ -174,3 +181,37 @@ splitend([92, 34], Res) -> {"", Res};
 splitend([34, 32 | Line], Res) -> {Line, Res};
 splitend([92, 34, 32 | Line], Res) -> {Line, Res};
 splitend([Char | Line], Res) -> splitend(Line, [Char | Res]).
+
+%% Just for multicast
+strip_addresses_element(Packet) ->
+  case xml:get_subtag(Packet, <<"addresses">>) of
+      {xmlel, <<"addresses">>, AAttrs, Addresses} ->
+          case xml:get_attr_s(<<"xmlns">>, AAttrs) of
+            ?NS_ADDRESS -> 
+                {xmlel, Name, Attrs, Els} = Packet,
+                Els_stripped = lists:keydelete(<<"addresses">>, 2, Els),
+                Packet_stripped = {xmlel, Name, Attrs, Els_stripped},
+                {ok, Packet_stripped, AAttrs, Addresses};
+            _ -> false
+          end;
+      _ -> false
+  end.
+
+
+strip_addresses_jid(Addresses) ->
+  lists:map(
+    fun(XML) -> 
+      {xmlel, <<"address">>, Attrs, _} = XML,
+      case xml:get_attr_s(<<"type">>, Attrs) of
+        <<"to">> -> xml:get_attr_s(<<"jid">>, Attrs);
+        <<"cc">> -> xml:get_attr_s(<<"jid">>, Attrs);
+        <<"bcc">> -> xml:get_attr_s(<<"jid">>, Attrs);
+        _ -> false
+      end
+    end,
+    Addresses).
+
+
+multicast_message(From,Jid,Packet_stripped) ->
+  STo = jlib:string_to_jid(Jid),
+  ejabberd_router:route(From, STo, Packet_stripped).
