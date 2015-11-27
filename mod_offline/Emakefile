@@ -1,1 +1,2 @@
+{'../ejabberd-dev/src/p1_server', [{outdir, "../ejabberd-dev/ebin"},{i,"../ejabberd-dev/include"}]}.
 {'src/mod_offline',	[{outdir, "ebin"},{i,"../ejabberd-dev/include"},{pa, "../ejabberd-dev/ebin"},{d,'LAGER'}]}.
